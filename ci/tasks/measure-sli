@@ -1,0 +1,41 @@
+#!/bin/bash
+# Install necessary packages
+apt-get -qq -y update && apt-get -qq -y install bc curl
+
+# Taken from https://stackoverflow.com/a/28796214/4462517
+function setval { printf -v "$1" "%s" "$(cat)"; declare -p "$1"; }
+
+# Let's measure the output of our app 100 times, and keep a running total of the number of successes
+# and response times, so we can average them later.
+num_iterations=100
+
+APP_URL=http://sample-error-app-insightful-dugong.cfapps.io
+
+total_successes=0
+total_response_time=0.0
+for i in $(seq 1 ${num_iterations}); do
+  # If curl returned a non-zero code, something was wrong with the script itself and we
+  # should note that error message and exit the script in an error state so we can be notified
+  # Structure taken from https://stackoverflow.com/a/28796214/4462517
+  eval "$( curl -s -o /dev/null -w '%{http_code}|%{time_total}' ${APP_URL} 2> >( setval error_output  ) > >( setval output ); <<<"$?" setval retval; )"
+  if [[ $retval != 0 ]]; then
+    echo "${error_output}" > sli-value/error
+    exit 1
+  fi
+
+  http_code=$(echo ${output} | cut -d '|' -f1)
+  response_time=$(echo ${output} | cut -d '|' -f2)
+
+  if [[ ${http_code} == 200 ]]; then
+    (( total_successes += 1 ))
+  fi
+
+  total_response_time=$(echo "$total_response_time + $response_time" | bc -l)
+done
+
+cat > sli-value/results <<EOF
+success_rate=$(echo "${total_successes} / ${num_iterations}" | bc -l)
+average_response_time=$(echo "$total_response_time / ${num_iterations}" | bc -l)
+EOF
+
+exit 0

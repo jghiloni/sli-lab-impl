@@ -1,0 +1,20 @@
+#!/bin/bash
+# Install necessary packages
+apt-get -qq -y update && apt-get -qq -y install bc
+
+eval "$(cat sli-value/results)"
+
+rc=0
+
+rm -f slo-failure/message
+if (( $(bc <<< "${success_rate} < 0.9") )); then
+  printf "We expect to receive successful responses from our app at least 90%% of the time. We received successful responses %.2f%% of the time\n" $(echo "${success_rate} * 100" | bc -l) >> slo-failure/message
+  rc=1
+fi
+
+if (( $(bc <<< "${average_response_time} > 0.15")  )); then
+  printf "We expect to have an average latency of 150ms or less. Instead, our average latency was %.0f ms\n" $(echo "1000 * ${average_response_time}" | bc -l) >> slo-failure/message
+  rc=1
+fi
+
+exit $rc
